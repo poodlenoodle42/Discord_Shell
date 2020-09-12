@@ -1,16 +1,38 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-func onMessage(s *discordgo.Session, m *discordgo.Message) {
+func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if m.Author.ID == s.State.User.ID {
+		return
+	}
 
+}
+
+func redirectOutput(pipe *io.Reader, s *discordgo.Session) {
+	scanner := bufio.NewScanner(*pipe)
+	for scanner.Scan() {
+		scanner.Text()
+	}
+}
+
+func execCommand(command string, args string, stdout chan string, stdin chan string) {
+	cmd := exec.Command(command, args)
+	outP, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Println(err)
+	}
+	outP.Read()
 }
 
 func main() {
@@ -18,7 +40,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	discord.AddHandler(onMessage)
+	discord.AddHandler(onMessageCreate)
 
 	err = discord.Open()
 	if err != nil {
