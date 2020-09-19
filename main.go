@@ -13,11 +13,18 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+var sessions map[string]chan string
+
 func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
-	execCommand(s, m)
+	_, exists := sessions[m.ChannelID]
+	if exists { //session already exists, redirect output
+		sessions[m.ChannelID] <- m.Content
+	} else {
+		execCommand(s, m)
+	}
 
 }
 
@@ -25,7 +32,19 @@ func redirectOutput(pipe *io.ReadCloser, s *discordgo.Session, m *discordgo.Mess
 	scanner := bufio.NewScanner(*pipe)
 	for scanner.Scan() {
 		text := scanner.Text()
+		fmt.Println("Got from stdout  " + text)
 		_, err := s.ChannelMessageSend(m.ChannelID, text)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func redirectInput(pipe *io.WriteCloser, m *discordgo.MessageCreate) {
+
+	for s := range sessions[m.ChannelID] {
+		fmt.Println("Wrote to stdin  " + s)
+		_, err := (*pipe).Write([]byte(s + "\n"))
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -34,23 +53,63 @@ func redirectOutput(pipe *io.ReadCloser, s *discordgo.Session, m *discordgo.Mess
 
 func execCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 	comAndArg := strings.Split(m.Content, " ")
-	cmd := exec.Command(comAndArg[0], comAndArg[1:]...)
-	outP, err := cmd.StdoutPipe()
-	if err != nil {
-		fmt.Println(err)
-	}
-	go redirectOutput(&outP, s, m)
-	err = cmd.Start()
-	if err != nil {
-		fmt.Println(err)
-	}
-	err = cmd.Wait()
-	if err != nil {
-		fmt.Println(err)
+
+	if comAndArg[0] == "[i]" {
+		sessions[m.ChannelID] = make(chan string)
+		cmd := exec.Command(comAndArg[1], comAndArg[2:]...)
+		outP, err := cmd.StdoutPipe()
+		if err != nil {
+			fmt.Println(err)
+		}
+		inP, err := cmd.StdinPipe()
+		if err != nil {
+			fmt.Println(err)
+		}
+		errP, err := cmd.StderrPipe()
+		if err != nil {
+			fmt.Println(err)
+		}
+		go redirectInput(&inP, m)
+		go redirectOutput(&outP, s, m)
+		go redirectOutput(&errP, s, m)
+		err = cmd.Start()
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		//_, err = inP.Write([]byte("exit()"))
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		err = cmd.Wait()
+		if err != nil {
+			fmt.Println(err)
+		}
+		close(sessions[m.ChannelID])
+		delete(sessions, m.ChannelID)
+	} else {
+		cmd := exec.Command(comAndArg[0], comAndArg[1:]...)
+		stdoutStderr, err := cmd.CombinedOutput()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		for i := 0; i <= (len(stdoutStderr) / 1900); i++ {
+			slicedTo := (i + 1) * 1900
+			if slicedTo > len(stdoutStderr) {
+				slicedTo = len(stdoutStderr) - 1
+			}
+			_, err = s.ChannelMessageSend(m.ChannelID, string(stdoutStderr[i*1900:slicedTo]))
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
 	}
 }
 
 func main() {
+	sessions = make(map[string]chan string)
 	discord, err := discordgo.New("Bot " + "NzA5MzMxMzM5MTkwNzMwNzgz.XrkWSg.UkG_W99GydwlcTki_aGMH4q2DLY")
 	if err != nil {
 		panic(err)
