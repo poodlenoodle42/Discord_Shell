@@ -110,7 +110,7 @@ func execCommand(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 func main() {
 	sessions = make(map[string]chan string)
-	discord, err := discordgo.New("Bot " + "NzA5MzMxMzM5MTkwNzMwNzgz.XrkWSg.UkG_W99GydwlcTki_aGMH4q2DLY")
+	discord, err := discordgo.New("Bot " + "Token")
 	if err != nil {
 		panic(err)
 	}
